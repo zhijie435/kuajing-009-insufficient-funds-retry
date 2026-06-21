@@ -658,4 +658,18 @@ onMounted(() => {
   align-items: center;
   gap: 4px;
   padding: 8px 12px;
-  background: #fef0
+  background: #fef0f0;
+  color: #f56c6c;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.detail-reason.shortage {
+  background: #fdf6ec;
+  color: #e6a23c;
+}
+
+.detail-reason b {
+  font-size: 15px;
+}
+</style>
