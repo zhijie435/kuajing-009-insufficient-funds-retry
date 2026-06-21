@@ -91,6 +91,13 @@
             <div class="summary-value">{{ batchResult.success_count || 0 }}</div>
           </div>
         </div>
+        <div class="summary-item skipped" v-if="batchResult.skipped_count > 0">
+          <el-icon color="#909399" size="24"><InfoFilled /></el-icon>
+          <div>
+            <div class="summary-label">跳过</div>
+            <div class="summary-value">{{ batchResult.skipped_count }}</div>
+          </div>
+        </div>
         <div class="summary-item failed" v-if="batchResult.failed_count > 0">
           <el-icon color="#f56c6c" size="24"><CircleCloseFilled /></el-icon>
           <div>
@@ -107,12 +114,32 @@
         </div>
       </div>
 
-      <div v-if="batchResult.total_still_frozen_amount > 0" class="total-shortage">
+      <div v-if="Number(batchResult.total_still_frozen_amount || 0) > 0" class="total-shortage">
         <el-icon color="#e6a23c"><InfoFilled /></el-icon>
-        <span>补款差额合计：<b style="color:#e6a23c">¥{{ batchResult.total_still_frozen_amount.toFixed(2) }}</b></span>
+        <span>补款差额合计：<b style="color:#e6a23c">¥{{ Number(batchResult.total_still_frozen_amount || 0).toFixed(2) }}</b></span>
+        <span v-if="batchResult.suggest_total_recharge && Number(batchResult.suggest_total_recharge) > Number(batchResult.total_still_frozen_amount)" class="suggest-extra">
+          ，建议充值 <b style="color:#f56c6c">¥{{ Number(batchResult.suggest_total_recharge).toFixed(0) }}</b> 以完成全部订单
+        </span>
       </div>
 
       <el-tabs v-if="hasBatchResultDetail" v-model="resultTab" class="result-tabs">
+        <el-tab-pane v-if="batchResult.skipped_items && batchResult.skipped_items.length > 0" label="已跳过" name="skipped">
+          <div class="detail-list">
+            <div v-for="(item, index) in batchResult.skipped_items" :key="'k-' + index" class="detail-item">
+              <div class="detail-main">
+                <div class="detail-title">
+                  <el-icon color="#909399" size="16"><InfoFilled /></el-icon>
+                  <span>{{ item.title || '未知订单' }}</span>
+                </div>
+                <div class="detail-info">
+                  <span v-if="item.order_no">订单号：{{ item.order_no }}</span>
+                  <span v-if="item.amount">金额：¥{{ Number(item.amount || 0).toFixed(2) }}</span>
+                </div>
+              </div>
+              <div class="detail-reason skipped">{{ item.reason }}</div>
+            </div>
+          </div>
+        </el-tab-pane>
         <el-tab-pane v-if="batchResult.failed_items && batchResult.failed_items.length > 0" label="失败明细" name="failed">
           <div class="detail-list">
             <div v-for="(item, index) in batchResult.failed_items" :key="'f-' + index" class="detail-item">
@@ -123,7 +150,7 @@
                 </div>
                 <div class="detail-info">
                   <span v-if="item.order_no">订单号：{{ item.order_no }}</span>
-                  <span v-if="item.amount">金额：¥{{ item.amount.toFixed(2) }}</span>
+                  <span v-if="item.amount">金额：¥{{ Number(item.amount || 0).toFixed(2) }}</span>
                 </div>
               </div>
               <div class="detail-reason">{{ item.reason }}</div>
@@ -140,12 +167,16 @@
                 </div>
                 <div class="detail-info">
                   <span v-if="item.order_no">订单号：{{ item.order_no }}</span>
-                  <span>订单金额：¥{{ item.amount.toFixed(2) }}</span>
+                  <span>订单金额：¥{{ Number(item.amount || 0).toFixed(2) }}</span>
                 </div>
               </div>
               <div class="detail-reason shortage">
                 <el-icon color="#e6a23c"><WarningFilled /></el-icon>
-                还差 <b>¥{{ item.shortage.toFixed(2) }}</b>，请充值后重试
+                <span>还差</span>
+                <b>¥{{ Number(item.shortage || 0).toFixed(2) }}</b>
+                <span v-if="item.suggest_recharge > 0">
+                  ，建议充值 <el-tag type="warning" size="small" effect="plain">¥{{ item.suggest_recharge }}</el-tag>
+                </span>
               </div>
             </div>
           </div>
@@ -160,7 +191,12 @@
           @click="handleRechargeForAll"
         >
           <el-icon><Wallet /></el-icon>
-          充值 ¥{{ batchResult.total_still_frozen_amount.toFixed(2) }} 并全部重试
+          <span v-if="batchResult.suggest_total_recharge && batchResult.suggest_total_recharge > batchResult.total_still_frozen_amount">
+            建议充值 ¥{{ batchResult.suggest_total_recharge.toFixed(2) }} 并全部重试
+          </span>
+          <span v-else>
+            充值 ¥{{ Number(batchResult.total_still_frozen_amount || 0).toFixed(2) }} 并全部重试
+          </span>
         </el-button>
       </template>
     </el-dialog>
@@ -246,7 +282,8 @@ const batchResultTitle = computed(() => {
 
 const hasBatchResultDetail = computed(() => {
   return (batchResult.value.failed_items && batchResult.value.failed_items.length > 0) ||
-         (batchResult.value.still_frozen_items && batchResult.value.still_frozen_items.length > 0)
+         (batchResult.value.still_frozen_items && batchResult.value.still_frozen_items.length > 0) ||
+         (batchResult.value.skipped_items && batchResult.value.skipped_items.length > 0)
 })
 
 const fetchOrders = async () => {
@@ -352,10 +389,12 @@ const handleBatchFreeze = async () => {
       ElMessage.success(`成功冻结 ${res.success_count} 个订单`)
     }
 
-    if (res.failed_count > 0 || res.success_count > 0) {
+    if (res.failed_count > 0 || res.success_count > 0 || res.skipped_count > 0) {
       batchResultVisible.value = true
       if (res.failed_count > 0) {
         resultTab.value = 'failed'
+      } else if (res.skipped_count > 0) {
+        resultTab.value = 'skipped'
       }
     }
 
@@ -423,7 +462,9 @@ const handleCloseBatchResult = () => {
 }
 
 const handleRechargeForAll = () => {
-  const amount = batchResult.value.total_still_frozen_amount || 0
+  const shortageAmount = Number(batchResult.value.total_still_frozen_amount || 0)
+  const suggestAmount = Number(batchResult.value.suggest_total_recharge || 0)
+  const amount = suggestAmount > shortageAmount ? suggestAmount : shortageAmount
   if (amount <= 0) return
   batchResultVisible.value = false
   openRechargeDialog(null, amount)
@@ -680,9 +721,27 @@ onMounted(() => {
 .detail-reason.shortage {
   background: #fdf6ec;
   color: #e6a23c;
+  flex-wrap: wrap;
+}
+
+.detail-reason.skipped {
+  background: #f4f4f5;
+  color: #909399;
 }
 
 .detail-reason b {
   font-size: 15px;
+}
+
+.summary-item.skipped .summary-value {
+  color: #909399;
+}
+
+.total-shortage {
+  flex-wrap: wrap;
+}
+
+.suggest-extra {
+  margin-left: 6px;
 }
 </style>

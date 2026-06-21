@@ -2,9 +2,15 @@
 
 class Database {
     private static $instance = null;
+    private static $testPdo = null;
     private $pdo;
 
-    private function __construct() {
+    private function __construct($useTestDb = false) {
+        if ($useTestDb || self::$testPdo !== null) {
+            $this->pdo = self::getTestPdo();
+            return;
+        }
+
         $config = require __DIR__ . '/../config/config.php';
         $dbPath = $config['db']['path'];
         
@@ -20,10 +26,38 @@ class Database {
     }
 
     public static function getInstance() {
+        if (self::$testPdo !== null) {
+            if (self::$instance === null) {
+                self::$instance = new self(true);
+            }
+            return self::$instance;
+        }
         if (self::$instance === null) {
             self::$instance = new self();
         }
         return self::$instance;
+    }
+
+    public static function setTestPdo(PDO $pdo) {
+        self::$testPdo = $pdo;
+        self::$instance = null;
+    }
+
+    public static function clearTestPdo() {
+        self::$testPdo = null;
+        self::$instance = null;
+    }
+
+    private static function getTestPdo() {
+        if (self::$testPdo === null) {
+            self::$testPdo = new PDO('sqlite::memory:');
+            self::$testPdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            self::$testPdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+            $instance = new self(true);
+            $instance->initTables();
+            $instance->seedData();
+        }
+        return self::$testPdo;
     }
 
     public function getConnection() {

@@ -1,27 +1,26 @@
 <?php
 
-class TestDatabase {
-    private static $pdo;
+require_once __DIR__ . '/../config/Database.php';
+require_once __DIR__ . '/../models/BaseModel.php';
+require_once __DIR__ . '/../models/User.php';
+require_once __DIR__ . '/../models/Wallet.php';
+require_once __DIR__ . '/../models/WalletTransaction.php';
+require_once __DIR__ . '/../models/RechargeRecord.php';
+require_once __DIR__ . '/../models/Order.php';
+require_once __DIR__ . '/../services/WalletService.php';
+require_once __DIR__ . '/../services/OrderService.php';
 
-    public static function getInstance() {
-        if (self::$pdo === null) {
-            self::$pdo = new PDO('sqlite::memory:');
-            self::$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-            self::$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-            self::initTables();
-            self::seedData();
-        }
-        return self::$pdo;
+class TestHelper {
+    public static function createTestPdo() {
+        $pdo = new PDO('sqlite::memory:');
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+        self::initTables($pdo);
+        self::seedData($pdo);
+        return $pdo;
     }
 
-    public static function reset() {
-        self::$pdo = null;
-        self::getInstance();
-    }
-
-    private static function initTables() {
-        $pdo = self::$pdo;
-
+    private static function initTables($pdo) {
         $pdo->exec("CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username VARCHAR(50) NOT NULL UNIQUE,
@@ -79,8 +78,7 @@ class TestDatabase {
         )");
     }
 
-    private static function seedData() {
-        $pdo = self::$pdo;
+    private static function seedData($pdo) {
         $stmt = $pdo->query("SELECT COUNT(*) as count FROM users");
         $result = $stmt->fetch();
 
@@ -90,7 +88,27 @@ class TestDatabase {
 
             $pdo->exec("INSERT INTO users (id, username, nickname) VALUES (2, 'testuser', '测试用户')");
             $pdo->exec("INSERT INTO wallets (user_id, balance, frozen_amount) VALUES (2, 0.00, 0.00)");
+
+            $pdo->exec("INSERT INTO users (id, username, nickname) VALUES (3, 'poorbuyer', '穷买家')");
+            $pdo->exec("INSERT INTO wallets (user_id, balance, frozen_amount) VALUES (3, 0.00, 0.00)");
         }
+    }
+
+    public static function rawQuery($sql, $params = []) {
+        $pdo = Database::getInstance()->getConnection();
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt;
+    }
+
+    public static function rawFetch($sql, $params = []) {
+        $stmt = self::rawQuery($sql, $params);
+        return $stmt->fetch();
+    }
+
+    public static function rawFetchAll($sql, $params = []) {
+        $stmt = self::rawQuery($sql, $params);
+        return $stmt->fetchAll();
     }
 }
 
@@ -99,11 +117,28 @@ class BaseTestCase {
     protected $failed = 0;
     protected $errors = [];
 
+    protected $walletService;
+    protected $orderService;
+
     public function setUp() {
-        TestDatabase::reset();
+        $pdo = TestHelper::createTestPdo();
+        Database::setTestPdo($pdo);
+
+        $this->resetTransactionLevel();
+
+        $this->walletService = new WalletService();
+        $this->orderService = new OrderService();
+    }
+
+    private function resetTransactionLevel() {
+        $reflection = new ReflectionClass('BaseModel');
+        $prop = $reflection->getProperty('transactionLevel');
+        $prop->setAccessible(true);
+        $prop->setValue(null, 0);
     }
 
     public function tearDown() {
+        Database::clearTestPdo();
     }
 
     public function run() {
