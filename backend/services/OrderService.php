@@ -75,6 +75,16 @@ class OrderService {
         $availableBalance = $walletInfo['available_balance'];
 
         if ($availableBalance < $amount) {
+            if ($order['status'] === Order::STATUS_FROZEN) {
+                return [
+                    'success' => false,
+                    'order' => $order,
+                    'wallet' => $walletInfo,
+                    'frozen' => true,
+                    'shortage' => $amount - $availableBalance,
+                    'message' => '余额不足，订单已冻结，请充值后重试',
+                ];
+            }
             return $this->freezeOrder($orderId, $userId, '余额不足，订单已冻结，请充值后重试');
         }
 
@@ -186,8 +196,8 @@ class OrderService {
             throw new Exception('只有冻结状态的订单才能重试支付');
         }
 
-        $walletInfo = $this->walletService->getWalletInfo($userId);
         $amount = floatval($order['amount']);
+        $walletInfo = $this->walletService->getWalletInfo($userId);
 
         if ($walletInfo['available_balance'] < $amount) {
             return [
@@ -200,11 +210,28 @@ class OrderService {
             ];
         }
 
-        $this->orderModel->updateStatus($orderId, Order::STATUS_PENDING, [
-            'frozen_reason' => null,
-        ]);
+        $this->beginTransaction();
+        try {
+            $this->walletService->freeze($userId, $amount, $orderId, '补款支付冻结');
+            $this->walletService->deductFromFrozen($userId, $amount, $orderId, '补款支付扣款');
+            $this->orderModel->updateStatus($orderId, Order::STATUS_PAID, [
+                'frozen_reason' => null,
+            ]);
+            $this->commit();
+        } catch (Exception $e) {
+            $this->rollBack();
+            throw $e;
+        }
 
-        return $this->processPayment($orderId, $userId);
+        $order = $this->orderModel->findById($orderId);
+        $walletInfo = $this->walletService->getWalletInfo($userId);
+
+        return [
+            'success' => true,
+            'order' => $order,
+            'wallet' => $walletInfo,
+            'message' => '支付成功',
+        ];
     }
 
     public function rechargeAndRetry($orderId, $userId, $rechargeAmount) {
@@ -225,28 +252,19 @@ class OrderService {
             throw new Exception('只有冻结状态的订单才能充值补款');
         }
 
-        $this->beginTransaction();
+        $rechargeResult = $this->walletService->recharge($userId, $rechargeAmount);
 
-        try {
-            $rechargeResult = $this->walletService->recharge($userId, $rechargeAmount);
+        $paymentResult = $this->retryPayment($orderId, $userId);
 
-            $paymentResult = $this->retryPayment($orderId, $userId);
-
-            $this->commit();
-
-            return [
-                'success' => $paymentResult['success'],
-                'recharge' => $rechargeResult,
-                'order' => $paymentResult['order'],
-                'wallet' => $paymentResult['wallet'],
-                'frozen' => isset($paymentResult['frozen']) ? $paymentResult['frozen'] : false,
-                'shortage' => isset($paymentResult['shortage']) ? $paymentResult['shortage'] : 0,
-                'message' => $paymentResult['message'],
-            ];
-        } catch (Exception $e) {
-            $this->rollBack();
-            throw $e;
-        }
+        return [
+            'success' => $paymentResult['success'],
+            'recharge' => $rechargeResult,
+            'order' => $paymentResult['order'],
+            'wallet' => $paymentResult['wallet'],
+            'frozen' => isset($paymentResult['frozen']) ? $paymentResult['frozen'] : false,
+            'shortage' => isset($paymentResult['shortage']) ? $paymentResult['shortage'] : 0,
+            'message' => $paymentResult['message'],
+        ];
     }
 
     public function cancelOrder($orderId, $userId) {
@@ -414,6 +432,7 @@ class OrderService {
         $failedItems = [];
         $successOrders = [];
         $stillFrozenItems = [];
+        $candidates = [];
 
         foreach ($orderIds as $orderId) {
             try {
@@ -452,26 +471,43 @@ class OrderService {
                     continue;
                 }
 
+                $candidates[] = $order;
+            } catch (Exception $e) {
+                $failedItems[] = [
+                    'order_id' => $orderId,
+                    'order_no' => $order['order_no'] ?? '',
+                    'title' => $order['title'] ?? '',
+                    'amount' => isset($order['amount']) ? floatval($order['amount']) : 0,
+                    'reason' => $e->getMessage()
+                ];
+            }
+        }
+
+        usort($candidates, function ($a, $b) {
+            return floatval($a['amount']) <=> floatval($b['amount']);
+        });
+
+        foreach ($candidates as $order) {
+            try {
                 $walletInfo = $this->walletService->getWalletInfo($userId);
                 $amount = floatval($order['amount']);
+                $orderId = intval($order['id']);
 
                 if ($walletInfo['available_balance'] < $amount) {
-                    $shortage = $amount - $walletInfo['available_balance'];
                     $stillFrozenItems[] = [
                         'order_id' => $orderId,
                         'order_no' => $order['order_no'],
                         'title' => $order['title'],
                         'amount' => $amount,
-                        'shortage' => $shortage,
-                        'reason' => '余额仍然不足'
+                        'reason' => '余额不足，无法支付此订单'
                     ];
                     continue;
                 }
 
                 $this->beginTransaction();
                 try {
-                    $this->walletService->freeze($userId, $amount, $orderId, '订单支付冻结');
-                    $this->walletService->deductFromFrozen($userId, $amount, $orderId, '订单支付扣款');
+                    $this->walletService->freeze($userId, $amount, $orderId, '补款支付冻结');
+                    $this->walletService->deductFromFrozen($userId, $amount, $orderId, '补款支付扣款');
                     $this->orderModel->updateStatus($orderId, Order::STATUS_PAID, [
                         'frozen_reason' => null
                     ]);
@@ -492,19 +528,20 @@ class OrderService {
                 }
             } catch (Exception $e) {
                 $failedItems[] = [
-                    'order_id' => $orderId,
+                    'order_id' => $order['id'],
                     'order_no' => $order['order_no'] ?? '',
                     'title' => $order['title'] ?? '',
-                    'amount' => isset($order['amount']) ? floatval($order['amount']) : 0,
+                    'amount' => floatval($order['amount']),
                     'reason' => $e->getMessage()
                 ];
             }
         }
 
-        $walletInfo = $this->walletService->getWalletInfo($userId);
-        $totalStillFrozen = array_reduce($stillFrozenItems, function ($sum, $item) {
-            return $sum + $item['shortage'];
+        $walletFinal = $this->walletService->getWalletInfo($userId);
+        $totalFrozenAmount = array_reduce($stillFrozenItems, function ($sum, $item) {
+            return $sum + $item['amount'];
         }, 0);
+        $totalStillFrozen = max(0, $totalFrozenAmount - $walletFinal['available_balance']);
 
         return [
             'success_count' => count($successIds),
@@ -515,8 +552,10 @@ class OrderService {
             'success_orders' => $successOrders,
             'failed_items' => $failedItems,
             'still_frozen_items' => $stillFrozenItems,
+            'total_frozen_amount' => $totalFrozenAmount,
             'total_still_frozen_amount' => $totalStillFrozen,
-            'wallet' => $walletInfo,
+            'available_balance' => $walletFinal['available_balance'],
+            'wallet' => $walletFinal,
             'message' => count($successIds) > 0 ? '批量补款恢复完成' : '批量补款恢复失败'
         ];
     }
