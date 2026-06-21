@@ -266,6 +266,13 @@ const fetchFrozenOrders = async () => {
   }
 }
 
+const refreshAllOrders = async () => {
+  await Promise.all([
+    fetchOrders(),
+    fetchFrozenOrders()
+  ])
+}
+
 const handleTabChange = () => {
   const query = { ...route.query }
   if (activeTab.value === 'all') {
@@ -283,8 +290,7 @@ const openCreateOrder = () => {
 }
 
 const handleOrderCreated = () => {
-  fetchOrders()
-  fetchFrozenOrders()
+  refreshAllOrders()
   fetchWalletInfo()
 }
 
@@ -354,8 +360,7 @@ const handleBatchFreeze = async () => {
     }
 
     clearSelection()
-    fetchOrders()
-    fetchFrozenOrders()
+    refreshAllOrders()
     fetchWalletInfo()
   } catch (e) {
     console.error(e)
@@ -405,8 +410,7 @@ const handleBatchRetry = async () => {
     }
 
     clearSelection()
-    fetchOrders()
-    fetchFrozenOrders()
+    refreshAllOrders()
     fetchWalletInfo()
   } catch (e) {
     console.error(e)
@@ -481,8 +485,18 @@ const handlePayOrder = (order) => {
 watch(
   () => orderRefreshSignal.version,
   () => {
-    fetchOrders()
-    fetchFrozenOrders()
+    refreshAllOrders()
+  }
+)
+
+watch(
+  () => orders.value,
+  () => {
+    const orderIds = new Set(orders.value.map(o => o.id))
+    const filtered = selectedIds.value.filter(id => orderIds.has(id))
+    if (filtered.length !== selectedIds.value.length) {
+      selectedIds.value = filtered
+    }
   }
 )
 
@@ -490,8 +504,7 @@ onMounted(() => {
   if (route.query.status) {
     activeTab.value = route.query.status
   }
-  fetchOrders()
-  fetchFrozenOrders()
+  refreshAllOrders()
 })
 </script>
 

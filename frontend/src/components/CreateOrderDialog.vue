@@ -130,6 +130,8 @@ watch(() => props.visible, (val) => {
       description: ''
     }
     formRef.value?.clearValidate()
+    frozenOrder.value = null
+    insufficientVisible.value = false
   }
 })
 

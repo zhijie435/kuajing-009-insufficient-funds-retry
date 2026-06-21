@@ -118,7 +118,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['update:visible', 'success'])
+const emit = defineEmits(['update:visible', 'success', 'close'])
 
 const walletInfo = inject('walletInfo')
 const fetchWalletInfo = inject('fetchWalletInfo')
@@ -221,6 +221,7 @@ const handleCustomAmountInput = () => {
 
 const handleClose = () => {
   dialogVisible.value = false
+  emit('close')
 }
 
 const handleConfirm = async () => {

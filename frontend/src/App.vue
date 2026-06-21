@@ -43,6 +43,7 @@
       :shortage="rechargeShortage"
       :order-info="rechargeOrderInfo"
       @success="handleRechargeSuccess"
+      @close="handleRechargeClose"
     />
   </div>
 </template>
@@ -92,11 +93,21 @@ const openRechargeDialog = (orderId = null, shortage = 0, orderInfo = null) => {
   rechargeVisible.value = true
 }
 
+const clearRechargeState = () => {
+  rechargeOrderId.value = null
+  rechargeShortage.value = 0
+  rechargeOrderInfo.value = null
+}
+
+const handleRechargeClose = () => {
+  clearRechargeState()
+}
+
 const handleRechargeSuccess = (result) => {
   fetchWalletInfo()
   const changedOrderId = result?.order?.id || rechargeOrderId.value
   notifyOrderRefresh(changedOrderId)
-  rechargeOrderInfo.value = null
+  clearRechargeState()
 }
 
 provide('walletInfo', walletInfo)
