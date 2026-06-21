@@ -454,7 +454,7 @@ class WalletService {
     }
 }
 
-class InvalidArgumentException extends Exception {
+class BizInvalidArgumentException extends Exception {
     protected $context;
 
     public function __construct($message = "", $code = 0, $context = []) {
@@ -480,7 +480,7 @@ class InsufficientBalanceException extends Exception {
     }
 }
 
-class RuntimeException extends Exception {
+class BizRuntimeException extends Exception {
     protected $context;
 
     public function __construct($message = "", $code = 0, $previous = null) {
