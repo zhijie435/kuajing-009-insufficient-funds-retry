@@ -41,13 +41,14 @@
       v-model:visible="rechargeVisible"
       :order-id="rechargeOrderId"
       :shortage="rechargeShortage"
+      :order-info="rechargeOrderInfo"
       @success="handleRechargeSuccess"
     />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, provide } from 'vue'
+import { ref, computed, onMounted, provide, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getWalletInfo } from '@/api/wallet'
@@ -57,9 +58,15 @@ const route = useRoute()
 const rechargeVisible = ref(false)
 const rechargeOrderId = ref(null)
 const rechargeShortage = ref(0)
+const rechargeOrderInfo = ref(null)
 
 const walletInfo = ref(null)
 const userInfo = ref(null)
+
+const orderRefreshSignal = reactive({
+  version: 0,
+  changedOrderId: null
+})
 
 const activeMenu = computed(() => route.path)
 
@@ -73,20 +80,31 @@ const fetchWalletInfo = async () => {
   }
 }
 
-const openRechargeDialog = (orderId = null, shortage = 0) => {
+const notifyOrderRefresh = (orderId = null) => {
+  orderRefreshSignal.version++
+  orderRefreshSignal.changedOrderId = orderId
+}
+
+const openRechargeDialog = (orderId = null, shortage = 0, orderInfo = null) => {
   rechargeOrderId.value = orderId
   rechargeShortage.value = shortage
+  rechargeOrderInfo.value = orderInfo
   rechargeVisible.value = true
 }
 
-const handleRechargeSuccess = () => {
+const handleRechargeSuccess = (result) => {
   fetchWalletInfo()
+  const changedOrderId = result?.order?.id || rechargeOrderId.value
+  notifyOrderRefresh(changedOrderId)
+  rechargeOrderInfo.value = null
 }
 
 provide('walletInfo', walletInfo)
 provide('userInfo', userInfo)
 provide('fetchWalletInfo', fetchWalletInfo)
 provide('openRechargeDialog', openRechargeDialog)
+provide('orderRefreshSignal', orderRefreshSignal)
+provide('notifyOrderRefresh', notifyOrderRefresh)
 
 onMounted(() => {
   fetchWalletInfo()
