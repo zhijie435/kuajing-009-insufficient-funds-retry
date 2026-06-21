@@ -10,6 +10,22 @@ class BaseModel {
         $this->pdo = Database::getInstance()->getConnection();
     }
 
+    public function getConnection() {
+        return $this->pdo;
+    }
+
+    public function beginTransaction() {
+        return $this->pdo->beginTransaction();
+    }
+
+    public function commit() {
+        return $this->pdo->commit();
+    }
+
+    public function rollBack() {
+        return $this->pdo->rollBack();
+    }
+
     public function findById($id) {
         $stmt = $this->pdo->prepare("SELECT * FROM {$this->table} WHERE id = :id");
         $stmt->execute([':id' => $id]);
