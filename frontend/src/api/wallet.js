@@ -18,3 +18,7 @@ export function getTransactions(limit = 20) {
 export function getRechargeRecords(limit = 20) {
   return request.get(`/wallet.php?action=recharge-records&limit=${limit}`)
 }
+
+export function getFrozenSummary() {
+  return request.get('/wallet.php?action=frozen-summary')
+}

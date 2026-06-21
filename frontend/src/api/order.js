@@ -24,21 +24,39 @@ export function getOrderDetail(orderId) {
   return request.get(`/order.php?action=detail&id=${orderId}`)
 }
 
+export function getFrozenSummary() {
+  return request.get('/order.php?action=frozen-summary')
+}
+
 export function retryPayment(orderId) {
   return request.post('/order.php?action=retry', {
     order_id: orderId
   })
 }
 
-export function rechargeAndRetry(orderId, rechargeAmount) {
+export function rechargeAndRetry(orderId, rechargeAmount, channel = 'manual') {
   return request.post('/order.php?action=recharge-retry', {
     order_id: orderId,
-    recharge_amount: rechargeAmount
+    recharge_amount: rechargeAmount,
+    channel
   })
 }
 
 export function cancelOrder(orderId) {
   return request.post('/order.php?action=cancel', {
+    order_id: orderId
+  })
+}
+
+export function freezeOrder(orderId, reason = '') {
+  return request.post('/order.php?action=freeze', {
+    order_id: orderId,
+    reason
+  })
+}
+
+export function unfreezeOrder(orderId) {
+  return request.post('/order.php?action=unfreeze', {
     order_id: orderId
   })
 }
