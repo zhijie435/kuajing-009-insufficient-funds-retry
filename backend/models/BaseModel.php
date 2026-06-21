@@ -15,6 +15,10 @@ class BaseModel {
         return $this->pdo;
     }
 
+    public function getTable() {
+        return $this->table;
+    }
+
     public function beginTransaction() {
         if (self::$transactionLevel === 0) {
             $result = $this->pdo->beginTransaction();
