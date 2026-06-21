@@ -96,6 +96,29 @@ try {
 
                 $order = $orderService->completeOrder($orderId, $userId);
                 json_response($order, '订单已完成');
+            } elseif ($path === 'batch-freeze') {
+                $orderIds = $data['order_ids'] ?? [];
+                $reason = $data['reason'] ?? '';
+
+                if (!is_array($orderIds) || empty($orderIds)) {
+                    json_error('订单ID列表不能为空', 400);
+                }
+
+                $orderIds = array_map('intval', $orderIds);
+
+                $result = $orderService->batchFreezeOrders($orderIds, $userId, $reason);
+                json_response($result, $result['message']);
+            } elseif ($path === 'batch-retry') {
+                $orderIds = $data['order_ids'] ?? [];
+
+                if (!is_array($orderIds) || empty($orderIds)) {
+                    json_error('订单ID列表不能为空', 400);
+                }
+
+                $orderIds = array_map('intval', $orderIds);
+
+                $result = $orderService->batchRetryPayment($orderIds, $userId);
+                json_response($result, $result['message']);
             } else {
                 json_error('无效的请求路径', 404);
             }

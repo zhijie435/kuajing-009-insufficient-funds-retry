@@ -5,10 +5,10 @@
     width="480px"
     @close="handleClose"
   >
-    <div v-if="orderInfo" class="shortage-tip">
+    <div v-if="displayOrderInfo" class="shortage-tip">
       <el-alert
         :title="shortageTip"
-        type="warning"
+        :type="displayTipType"
         :closable="false"
         show-icon
       >
@@ -20,13 +20,13 @@
         <span class="label">当前可用余额</span>
         <span class="value">¥{{ walletInfo?.available_balance || 0 }}</span>
       </div>
-      <div v-if="orderInfo" class="balance-item">
+      <div v-if="displayOrderInfo" class="balance-item">
         <span class="label">订单金额</span>
-        <span class="value">¥{{ orderInfo.amount }}</span>
+        <span class="value">¥{{ displayOrderInfo.amount }}</span>
       </div>
-      <div v-if="orderInfo && shortage > 0" class="balance-item shortage">
+      <div v-if="displayOrderInfo && displayShortage > 0" class="balance-item shortage">
         <span class="label">还差</span>
-        <span class="value">¥{{ shortage.toFixed(2) }}</span>
+        <span class="value">¥{{ displayShortage.toFixed(2) }}</span>
       </div>
     </div>
 
@@ -133,6 +133,10 @@ const customAmount = ref(null)
 const selectedChannel = ref('wechat')
 const loading = ref(false)
 
+const currentShortage = ref(0)
+const currentOrderInfo = ref(null)
+const latestResult = ref(null)
+
 const quickAmounts = [50, 100, 200, 500, 1000]
 
 const channels = [
@@ -161,22 +165,44 @@ const finalAmount = computed(() => {
   return rechargeAmount.value || 0
 })
 
+const displayShortage = computed(() => {
+  return latestResult.value?.shortage > 0 ? latestResult.value.shortage :
+    (currentShortage.value > 0 ? currentShortage.value : props.shortage)
+})
+
+const displayOrderInfo = computed(() => {
+  return latestResult.value?.order || currentOrderInfo.value || props.orderInfo
+})
+
 const suggestRecharge = computed(() => {
-  if (props.shortage > 0) {
-    return Math.ceil(props.shortage)
+  if (displayShortage.value > 0) {
+    return Math.ceil(displayShortage.value)
   }
   return 0
 })
 
 const shortageTip = computed(() => {
-  if (props.orderInfo?.title) {
-    return `订单「${props.orderInfo.title}」余额不足，请充值后重试`
+  if (latestResult.value?.frozen) {
+    return `充值成功，但余额仍不足，还差 ¥${latestResult.value.shortage.toFixed(2)}，请继续充值`
+  }
+  if (displayOrderInfo.value?.title) {
+    return `订单「${displayOrderInfo.value.title}」余额不足，请充值后重试`
   }
   return '余额不足，请充值后重试'
 })
 
+const displayTipType = computed(() => {
+  if (latestResult.value?.frozen) {
+    return 'warning'
+  }
+  return 'warning'
+})
+
 watch(() => props.visible, (val) => {
   if (val) {
+    currentShortage.value = props.shortage
+    currentOrderInfo.value = props.orderInfo
+    latestResult.value = null
     if (suggestRecharge.value > 0) {
       const defaultAmount = quickAmounts.find(a => a >= suggestRecharge.value) || suggestRecharge.value
       rechargeAmount.value = defaultAmount
@@ -258,8 +284,16 @@ const handleRechargeAndRetry = async () => {
       emit('success', res)
       handleClose()
     } else if (res.frozen) {
-      ElMessage.warning(`充值成功，但余额仍不足，还差 ¥${res.shortage.toFixed(2)}`)
+      latestResult.value = res
+      currentShortage.value = res.shortage
+      currentOrderInfo.value = res.order
+
       fetchWalletInfo()
+
+      const nextSuggestAmount = quickAmounts.find(a => a >= res.shortage) || Math.ceil(res.shortage)
+      rechargeAmount.value = nextSuggestAmount
+      customAmount.value = null
+
       emit('success', res)
     }
   } catch (e) {

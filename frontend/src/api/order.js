@@ -48,3 +48,16 @@ export function completeOrder(orderId) {
     order_id: orderId
   })
 }
+
+export function batchFreezeOrders(orderIds, reason = '') {
+  return request.post('/order.php?action=batch-freeze', {
+    order_ids: orderIds,
+    reason
+  })
+}
+
+export function batchRetryPayment(orderIds) {
+  return request.post('/order.php?action=batch-retry', {
+    order_ids: orderIds
+  })
+}

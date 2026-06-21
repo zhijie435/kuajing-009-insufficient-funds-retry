@@ -21,22 +21,149 @@
       </el-tabs>
     </div>
 
+    <div v-if="showBatchToolbar" class="batch-toolbar card">
+      <div class="batch-info">
+        <el-checkbox
+          :model-value="isAllSelected"
+          :indeterminate="isIndeterminate"
+          @change="handleToggleAll"
+        >
+          全选
+        </el-checkbox>
+        <span class="selected-count">已选 <b>{{ selectedIds.length }}</b> / {{ selectableOrders.length }} 项</span>
+      </div>
+      <div class="batch-actions">
+        <template v-if="activeTab === 'pending' || activeTab === 'all'">
+          <el-button
+            type="warning"
+            :disabled="!hasPendingSelected"
+            @click="handleBatchFreeze"
+          >
+            <el-icon><Lock /></el-icon>
+            批量冻结
+          </el-button>
+        </template>
+        <template v-if="activeTab === 'frozen' || activeTab === 'all'">
+          <el-button
+            type="primary"
+            :disabled="!hasFrozenSelected"
+            @click="handleBatchRetry"
+          >
+            <el-icon><RefreshRight /></el-icon>
+            批量补款恢复
+          </el-button>
+        </template>
+        <el-button @click="clearSelection">取消选择</el-button>
+      </div>
+    </div>
+
     <div class="order-list">
       <template v-if="orders.length > 0">
         <OrderCard
           v-for="order in orders"
           :key="order.id"
           :order="order"
+          :selectable="showBatchToolbar"
+          :selected="selectedIds.includes(order.id)"
           @retry="handleRetryOrder"
           @cancel="handleCancelOrder"
           @complete="handleCompleteOrder"
           @pay="handlePayOrder"
+          @select="handleSelectOrder"
         />
       </template>
       <el-empty v-else :description="emptyText" />
     </div>
 
     <CreateOrderDialog v-model:visible="createOrderVisible" @success="handleOrderCreated" />
+
+    <el-dialog
+      v-model="batchResultVisible"
+      :title="batchResultTitle"
+      width="640px"
+      :close-on-click-modal="false"
+    >
+      <div class="batch-result-summary">
+        <div class="summary-item success">
+          <el-icon color="#67c23a" size="24"><CircleCheckFilled /></el-icon>
+          <div>
+            <div class="summary-label">成功</div>
+            <div class="summary-value">{{ batchResult.success_count || 0 }}</div>
+          </div>
+        </div>
+        <div class="summary-item failed" v-if="batchResult.failed_count > 0">
+          <el-icon color="#f56c6c" size="24"><CircleCloseFilled /></el-icon>
+          <div>
+            <div class="summary-label">失败</div>
+            <div class="summary-value">{{ batchResult.failed_count }}</div>
+          </div>
+        </div>
+        <div class="summary-item frozen" v-if="batchResult.frozen_count > 0">
+          <el-icon color="#e6a23c" size="24"><WarningFilled /></el-icon>
+          <div>
+            <div class="summary-label">仍需补款</div>
+            <div class="summary-value">{{ batchResult.frozen_count }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="batchResult.total_still_frozen_amount > 0" class="total-shortage">
+        <el-icon color="#e6a23c"><InfoFilled /></el-icon>
+        <span>补款差额合计：<b style="color:#e6a23c">¥{{ batchResult.total_still_frozen_amount.toFixed(2) }}</b></span>
+      </div>
+
+      <el-tabs v-if="hasBatchResultDetail" v-model="resultTab" class="result-tabs">
+        <el-tab-pane v-if="batchResult.failed_items && batchResult.failed_items.length > 0" label="失败明细" name="failed">
+          <div class="detail-list">
+            <div v-for="(item, index) in batchResult.failed_items" :key="'f-' + index" class="detail-item">
+              <div class="detail-main">
+                <div class="detail-title">
+                  <el-icon color="#f56c6c" size="16"><CircleCloseFilled /></el-icon>
+                  <span>{{ item.title || '未知订单' }}</span>
+                </div>
+                <div class="detail-info">
+                  <span v-if="item.order_no">订单号：{{ item.order_no }}</span>
+                  <span v-if="item.amount">金额：¥{{ item.amount.toFixed(2) }}</span>
+                </div>
+              </div>
+              <div class="detail-reason">{{ item.reason }}</div>
+            </div>
+          </div>
+        </el-tab-pane>
+        <el-tab-pane v-if="batchResult.still_frozen_items && batchResult.still_frozen_items.length > 0" label="待补款明细" name="frozen">
+          <div class="detail-list">
+            <div v-for="(item, index) in batchResult.still_frozen_items" :key="'s-' + index" class="detail-item">
+              <div class="detail-main">
+                <div class="detail-title">
+                  <el-icon color="#e6a23c" size="16"><WarningFilled /></el-icon>
+                  <span>{{ item.title || '未知订单' }}</span>
+                </div>
+                <div class="detail-info">
+                  <span v-if="item.order_no">订单号：{{ item.order_no }}</span>
+                  <span>订单金额：¥{{ item.amount.toFixed(2) }}</span>
+                </div>
+              </div>
+              <div class="detail-reason shortage">
+                <el-icon color="#e6a23c"><WarningFilled /></el-icon>
+                还差 <b>¥{{ item.shortage.toFixed(2) }}</b>，请充值后重试
+              </div>
+            </div>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+
+      <template #footer>
+        <el-button @click="handleCloseBatchResult">关闭</el-button>
+        <el-button
+          v-if="batchResult.frozen_count > 0"
+          type="primary"
+          @click="handleRechargeForAll"
+        >
+          <el-icon><Wallet /></el-icon>
+          充值 ¥{{ batchResult.total_still_frozen_amount.toFixed(2) }} 并全部重试
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -44,7 +171,15 @@
 import { ref, computed, inject, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getOrderList, getFrozenOrders, retryPayment, cancelOrder, completeOrder } from '@/api/order'
+import {
+  getOrderList,
+  getFrozenOrders,
+  retryPayment,
+  cancelOrder,
+  completeOrder,
+  batchFreezeOrders,
+  batchRetryPayment
+} from '@/api/order'
 import OrderCard from '@/components/OrderCard.vue'
 import CreateOrderDialog from '@/components/CreateOrderDialog.vue'
 
@@ -60,6 +195,10 @@ const createOrderVisible = ref(false)
 const orders = ref([])
 const frozenOrders = ref([])
 const activeTab = ref('all')
+const selectedIds = ref([])
+const batchResultVisible = ref(false)
+const batchResult = ref({})
+const resultTab = ref('failed')
 
 const frozenCount = computed(() => frozenOrders.value.length)
 
@@ -73,6 +212,41 @@ const emptyText = computed(() => {
     cancelled: '暂无已取消订单'
   }
   return map[activeTab.value] || '暂无订单'
+})
+
+const showBatchToolbar = computed(() => {
+  return activeTab.value === 'pending' || activeTab.value === 'frozen' || activeTab.value === 'all'
+})
+
+const selectableOrders = computed(() => {
+  return orders.value.filter(o => o.status === 'pending' || o.status === 'frozen')
+})
+
+const isAllSelected = computed(() => {
+  if (selectableOrders.value.length === 0) return false
+  return selectableOrders.value.every(o => selectedIds.value.includes(o.id))
+})
+
+const isIndeterminate = computed(() => {
+  const count = selectableOrders.value.filter(o => selectedIds.value.includes(o.id)).length
+  return count > 0 && count < selectableOrders.value.length
+})
+
+const hasPendingSelected = computed(() => {
+  return orders.value.some(o => o.status === 'pending' && selectedIds.value.includes(o.id))
+})
+
+const hasFrozenSelected = computed(() => {
+  return orders.value.some(o => o.status === 'frozen' && selectedIds.value.includes(o.id))
+})
+
+const batchResultTitle = computed(() => {
+  return batchResult.value.action === 'freeze' ? '批量冻结结果' : '批量补款恢复结果'
+})
+
+const hasBatchResultDetail = computed(() => {
+  return (batchResult.value.failed_items && batchResult.value.failed_items.length > 0) ||
+         (batchResult.value.still_frozen_items && batchResult.value.still_frozen_items.length > 0)
 })
 
 const fetchOrders = async () => {
@@ -100,6 +274,7 @@ const handleTabChange = () => {
     query.status = activeTab.value
   }
   router.replace({ path: '/orders', query })
+  clearSelection()
   fetchOrders()
 }
 
@@ -113,10 +288,147 @@ const handleOrderCreated = () => {
   fetchWalletInfo()
 }
 
+const handleSelectOrder = (order, isSelected) => {
+  if (isSelected) {
+    if (!selectedIds.value.includes(order.id)) {
+      selectedIds.value.push(order.id)
+    }
+  } else {
+    const idx = selectedIds.value.indexOf(order.id)
+    if (idx > -1) {
+      selectedIds.value.splice(idx, 1)
+    }
+  }
+}
+
+const handleToggleAll = (val) => {
+  if (val) {
+    selectedIds.value = selectableOrders.value.map(o => o.id)
+  } else {
+    clearSelection()
+  }
+}
+
+const clearSelection = () => {
+  selectedIds.value = []
+}
+
+const handleBatchFreeze = async () => {
+  const pendingIds = orders.value
+    .filter(o => o.status === 'pending' && selectedIds.value.includes(o.id))
+    .map(o => o.id)
+
+  if (pendingIds.length === 0) {
+    ElMessage.warning('请选择待支付状态的订单')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要冻结选中的 ${pendingIds.length} 个订单吗？`,
+      '确认批量冻结',
+      {
+        confirmButtonText: '确定冻结',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch (e) {
+    if (e !== 'cancel') return
+    return
+  }
+
+  try {
+    const res = await batchFreezeOrders(pendingIds, '批量冻结')
+    batchResult.value = { ...res, action: 'freeze' }
+
+    if (res.success_count > 0) {
+      ElMessage.success(`成功冻结 ${res.success_count} 个订单`)
+    }
+
+    if (res.failed_count > 0 || res.success_count > 0) {
+      batchResultVisible.value = true
+      if (res.failed_count > 0) {
+        resultTab.value = 'failed'
+      }
+    }
+
+    clearSelection()
+    fetchOrders()
+    fetchFrozenOrders()
+    fetchWalletInfo()
+  } catch (e) {
+    console.error(e)
+  }
+}
+
+const handleBatchRetry = async () => {
+  const frozenIds = orders.value
+    .filter(o => o.status === 'frozen' && selectedIds.value.includes(o.id))
+    .map(o => o.id)
+
+  if (frozenIds.length === 0) {
+    ElMessage.warning('请选择已冻结状态的订单')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确定要对选中的 ${frozenIds.length} 个冻结订单进行补款恢复吗？`,
+      '确认批量补款恢复',
+      {
+        confirmButtonText: '确定补款',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+  } catch (e) {
+    if (e !== 'cancel') return
+    return
+  }
+
+  try {
+    const res = await batchRetryPayment(frozenIds)
+    batchResult.value = { ...res, action: 'retry' }
+
+    if (res.success_count > 0) {
+      ElMessage.success(`成功支付 ${res.success_count} 个订单`)
+    }
+
+    if (res.failed_count > 0 || res.frozen_count > 0 || res.success_count > 0) {
+      batchResultVisible.value = true
+      if (res.frozen_count > 0) {
+        resultTab.value = 'frozen'
+      } else if (res.failed_count > 0) {
+        resultTab.value = 'failed'
+      }
+    }
+
+    clearSelection()
+    fetchOrders()
+    fetchFrozenOrders()
+    fetchWalletInfo()
+  } catch (e) {
+    console.error(e)
+  }
+}
+
+const handleCloseBatchResult = () => {
+  batchResultVisible.value = false
+  batchResult.value = {}
+}
+
+const handleRechargeForAll = () => {
+  const amount = batchResult.value.total_still_frozen_amount || 0
+  if (amount <= 0) return
+  batchResultVisible.value = false
+  openRechargeDialog(null, amount)
+}
+
 const handleRetryOrder = async (order) => {
   try {
     const res = await retryPayment(order.id)
-    
+
     if (res.success) {
       ElMessage.success('支付成功')
       notifyOrderRefresh(order.id)
@@ -217,7 +529,133 @@ onMounted(() => {
   margin-left: 4px;
 }
 
+.batch-toolbar {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+}
+
+.batch-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.selected-count {
+  font-size: 14px;
+  color: #606266;
+}
+
+.selected-count b {
+  color: #409eff;
+  font-size: 16px;
+}
+
+.batch-actions {
+  display: flex;
+  gap: 10px;
+}
+
 .order-list {
   margin-top: 20px;
 }
-</style>
+
+.batch-result-summary {
+  display: flex;
+  gap: 24px;
+  padding: 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.summary-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.summary-label {
+  font-size: 12px;
+  color: #909399;
+}
+
+.summary-value {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.summary-item.success .summary-value {
+  color: #67c23a;
+}
+
+.summary-item.failed .summary-value {
+  color: #f56c6c;
+}
+
+.summary-item.frozen .summary-value {
+  color: #e6a23c;
+}
+
+.total-shortage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: #fdf6ec;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  color: #e6a23c;
+}
+
+.result-tabs {
+  margin-top: 8px;
+}
+
+.detail-list {
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.detail-item {
+  padding: 14px;
+  background: #fafafa;
+  border-radius: 6px;
+  margin-bottom: 10px;
+}
+
+.detail-item:last-child {
+  margin-bottom: 0;
+}
+
+.detail-main {
+  margin-bottom: 8px;
+}
+
+.detail-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  color: #303133;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.detail-info {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.detail-reason {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  background: #fef0

@@ -1,79 +1,84 @@
 <template>
-  <div class="order-card" :class="`status-${order.status}`">
-    <div class="order-header">
-      <div class="order-title">
-        <el-icon v-if="order.status === 'frozen'" color="#e6a23c" size="20">
-          <WarningFilled />
-        </el-icon>
-        <el-icon v-else-if="order.status === 'paid'" color="#67c23a" size="20">
-          <CircleCheckFilled />
-        </el-icon>
-        <el-icon v-else-if="order.status === 'completed'" color="#409eff" size="20">
-          <Finished />
-        </el-icon>
-        <el-icon v-else-if="order.status === 'cancelled'" color="#909399" size="20">
-          <CircleCloseFilled />
-        </el-icon>
-        <el-icon v-else color="#909399" size="20">
-          <Clock />
-        </el-icon>
-        <span class="title-text">{{ order.title }}</span>
-      </div>
-      <el-tag :type="statusType" effect="light" size="small">
-        {{ statusText }}
-      </el-tag>
+  <div class="order-card" :class="[`status-${order.status}`, { 'is-selected': selected }]">
+    <div v-if="selectable" class="checkbox-wrapper" @click.stop="toggleSelect">
+      <el-checkbox :model-value="selected" />
     </div>
-
-    <div class="order-body">
-      <div v-if="order.description" class="order-desc">
-        {{ order.description }}
-      </div>
-      <div class="order-info">
-        <div class="info-item">
-          <span class="label">订单号</span>
-          <span class="value">{{ order.order_no }}</span>
+    <div class="card-content">
+      <div class="order-header">
+        <div class="order-title">
+          <el-icon v-if="order.status === 'frozen'" color="#e6a23c" size="20">
+            <WarningFilled />
+          </el-icon>
+          <el-icon v-else-if="order.status === 'paid'" color="#67c23a" size="20">
+            <CircleCheckFilled />
+          </el-icon>
+          <el-icon v-else-if="order.status === 'completed'" color="#409eff" size="20">
+            <Finished />
+          </el-icon>
+          <el-icon v-else-if="order.status === 'cancelled'" color="#909399" size="20">
+            <CircleCloseFilled />
+          </el-icon>
+          <el-icon v-else color="#909399" size="20">
+            <Clock />
+          </el-icon>
+          <span class="title-text">{{ order.title }}</span>
         </div>
-        <div class="info-item">
-          <span class="label">金额</span>
-          <span class="value amount">¥{{ order.amount }}</span>
+        <el-tag :type="statusType" effect="light" size="small">
+          {{ statusText }}
+        </el-tag>
+      </div>
+
+      <div class="order-body">
+        <div v-if="order.description" class="order-desc">
+          {{ order.description }}
+        </div>
+        <div class="order-info">
+          <div class="info-item">
+            <span class="label">订单号</span>
+            <span class="value">{{ order.order_no }}</span>
+          </div>
+          <div class="info-item">
+            <span class="label">金额</span>
+            <span class="value amount">¥{{ order.amount }}</span>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div v-if="order.status === 'frozen' && order.frozen_reason" class="frozen-reason">
-      <el-icon color="#e6a23c"><InfoFilled /></el-icon>
-      <span>{{ order.frozen_reason }}</span>
-    </div>
-
-    <div class="order-footer">
-      <div class="created-time">
-        <el-icon size="14"><Timer /></el-icon>
-        <span>{{ formatTime(order.created_at) }}</span>
+      <div v-if="order.status === 'frozen' && order.frozen_reason" class="frozen-reason">
+        <el-icon color="#e6a23c"><InfoFilled /></el-icon>
+        <span>{{ order.frozen_reason }}</span>
       </div>
-      <div class="actions">
-        <slot name="actions" :order="order">
-          <template v-if="order.status === 'frozen'">
-            <el-button size="small" @click="$emit('cancel', order)">
-              取消订单
-            </el-button>
-            <el-button type="primary" size="small" @click="$emit('retry', order)">
-              立即补款
-            </el-button>
-          </template>
-          <template v-else-if="order.status === 'pending'">
-            <el-button size="small" @click="$emit('cancel', order)">
-              取消订单
-            </el-button>
-            <el-button type="primary" size="small" @click="$emit('pay', order)">
-              去支付
-            </el-button>
-          </template>
-          <template v-else-if="order.status === 'paid'">
-            <el-button type="success" size="small" @click="$emit('complete', order)">
-              确认完成
-            </el-button>
-          </template>
-        </slot>
+
+      <div class="order-footer">
+        <div class="created-time">
+          <el-icon size="14"><Timer /></el-icon>
+          <span>{{ formatTime(order.created_at) }}</span>
+        </div>
+        <div class="actions">
+          <slot name="actions" :order="order">
+            <template v-if="order.status === 'frozen'">
+              <el-button size="small" @click="$emit('cancel', order)">
+                取消订单
+              </el-button>
+              <el-button type="primary" size="small" @click="$emit('retry', order)">
+                立即补款
+              </el-button>
+            </template>
+            <template v-else-if="order.status === 'pending'">
+              <el-button size="small" @click="$emit('cancel', order)">
+                取消订单
+              </el-button>
+              <el-button type="primary" size="small" @click="$emit('pay', order)">
+                去支付
+              </el-button>
+            </template>
+            <template v-else-if="order.status === 'paid'">
+              <el-button type="success" size="small" @click="$emit('complete', order)">
+                确认完成
+              </el-button>
+            </template>
+          </slot>
+        </div>
       </div>
     </div>
   </div>
@@ -86,10 +91,22 @@ const props = defineProps({
   order: {
     type: Object,
     required: true
+  },
+  selectable: {
+    type: Boolean,
+    default: false
+  },
+  selected: {
+    type: Boolean,
+    default: false
   }
 })
 
-defineEmits(['pay', 'retry', 'cancel', 'complete', 'detail'])
+const emit = defineEmits(['pay', 'retry', 'cancel', 'complete', 'detail', 'select'])
+
+const toggleSelect = () => {
+  emit('select', props.order, !props.selected)
+}
 
 const statusType = computed(() => {
   const map = {
@@ -128,10 +145,37 @@ const formatTime = (time) => {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   transition: all 0.3s;
   border-left: 4px solid transparent;
+  position: relative;
+  display: flex;
+  align-items: stretch;
 }
 
 .order-card:hover {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.order-card.is-selected {
+  border-left-color: #409eff;
+}
+
+.order-card.is-selected .card-content {
+  background: linear-gradient(to right, #ecf5ff 0%, #fff 5%);
+}
+
+.checkbox-wrapper {
+  display: flex;
+  align-items: flex-start;
+  padding-right: 16px;
+  padding-top: 2px;
+  cursor: pointer;
+}
+
+.card-content {
+  flex: 1;
+  min-width: 0;
+  margin: -20px;
+  padding: 20px;
+  border-radius: 0 8px 8px 0;
 }
 
 .order-card.status-frozen {

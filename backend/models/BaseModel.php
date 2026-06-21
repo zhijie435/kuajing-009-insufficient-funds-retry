@@ -5,6 +5,7 @@ require_once __DIR__ . '/../config/Database.php';
 class BaseModel {
     protected $pdo;
     protected $table;
+    private static $transactionLevel = 0;
 
     public function __construct() {
         $this->pdo = Database::getInstance()->getConnection();
@@ -15,15 +16,35 @@ class BaseModel {
     }
 
     public function beginTransaction() {
-        return $this->pdo->beginTransaction();
+        if (self::$transactionLevel === 0) {
+            $result = $this->pdo->beginTransaction();
+            self::$transactionLevel++;
+            return $result;
+        }
+        self::$transactionLevel++;
+        return true;
     }
 
     public function commit() {
-        return $this->pdo->commit();
+        if (self::$transactionLevel <= 1) {
+            self::$transactionLevel = 0;
+            return $this->pdo->commit();
+        }
+        self::$transactionLevel--;
+        return true;
     }
 
     public function rollBack() {
-        return $this->pdo->rollBack();
+        if (self::$transactionLevel <= 1) {
+            self::$transactionLevel = 0;
+            return $this->pdo->rollBack();
+        }
+        self::$transactionLevel--;
+        return true;
+    }
+
+    public function inTransaction() {
+        return self::$transactionLevel > 0;
     }
 
     public function findById($id) {

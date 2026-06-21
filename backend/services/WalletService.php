@@ -15,6 +15,18 @@ class WalletService {
         $this->rechargeModel = new RechargeRecord();
     }
 
+    private function beginTransaction() {
+        return $this->walletModel->beginTransaction();
+    }
+
+    private function commit() {
+        return $this->walletModel->commit();
+    }
+
+    private function rollBack() {
+        return $this->walletModel->rollBack();
+    }
+
     public function getWalletInfo($userId) {
         $wallet = $this->walletModel->getByUserId($userId);
         if (!$wallet) {
@@ -33,7 +45,7 @@ class WalletService {
             throw new Exception('充值金额必须大于0');
         }
 
-        $this->walletModel->getConnection()->beginTransaction();
+        $this->beginTransaction();
 
         try {
             $wallet = $this->walletModel->getByUserId($userId);
@@ -61,7 +73,7 @@ class WalletService {
                 'transaction_id' => 'TXN' . date('YmdHis') . mt_rand(1000, 9999),
             ]);
 
-            $this->walletModel->getConnection()->commit();
+            $this->commit();
 
             return [
                 'recharge_id' => $rechargeId,
@@ -70,7 +82,7 @@ class WalletService {
                 'balance_after' => $balanceAfter,
             ];
         } catch (Exception $e) {
-            $this->walletModel->getConnection()->rollBack();
+            $this->rollBack();
             throw $e;
         }
     }
@@ -87,7 +99,7 @@ class WalletService {
             throw new Exception('可用余额不足，无法冻结');
         }
 
-        $this->walletModel->getConnection()->beginTransaction();
+        $this->beginTransaction();
 
         try {
             $newFrozenAmount = floatval($wallet['frozen_amount']) + $amount;
@@ -106,11 +118,11 @@ class WalletService {
                 'description' => $description,
             ]);
 
-            $this->walletModel->getConnection()->commit();
+            $this->commit();
 
             return true;
         } catch (Exception $e) {
-            $this->walletModel->getConnection()->rollBack();
+            $this->rollBack();
             throw $e;
         }
     }
@@ -126,7 +138,7 @@ class WalletService {
             throw new Exception('冻结金额不足，无法解冻');
         }
 
-        $this->walletModel->getConnection()->beginTransaction();
+        $this->beginTransaction();
 
         try {
             $newFrozenAmount = floatval($wallet['frozen_amount']) - $amount;
@@ -145,11 +157,11 @@ class WalletService {
                 'description' => $description,
             ]);
 
-            $this->walletModel->getConnection()->commit();
+            $this->commit();
 
             return true;
         } catch (Exception $e) {
-            $this->walletModel->getConnection()->rollBack();
+            $this->rollBack();
             throw $e;
         }
     }
@@ -166,7 +178,7 @@ class WalletService {
             throw new Exception('可用余额不足');
         }
 
-        $this->walletModel->getConnection()->beginTransaction();
+        $this->beginTransaction();
 
         try {
             $balanceBefore = floatval($wallet['balance']);
@@ -186,14 +198,14 @@ class WalletService {
                 'description' => $description,
             ]);
 
-            $this->walletModel->getConnection()->commit();
+            $this->commit();
 
             return [
                 'balance_before' => $balanceBefore,
                 'balance_after' => $balanceAfter,
             ];
         } catch (Exception $e) {
-            $this->walletModel->getConnection()->rollBack();
+            $this->rollBack();
             throw $e;
         }
     }
@@ -209,7 +221,7 @@ class WalletService {
             throw new Exception('冻结金额不足');
         }
 
-        $this->walletModel->getConnection()->beginTransaction();
+        $this->beginTransaction();
 
         try {
             $balanceBefore = floatval($wallet['balance']);
@@ -232,14 +244,14 @@ class WalletService {
                 'description' => $description,
             ]);
 
-            $this->walletModel->getConnection()->commit();
+            $this->commit();
 
             return [
                 'balance_before' => $balanceBefore,
                 'balance_after' => $balanceAfter,
             ];
         } catch (Exception $e) {
-            $this->walletModel->getConnection()->rollBack();
+            $this->rollBack();
             throw $e;
         }
     }
